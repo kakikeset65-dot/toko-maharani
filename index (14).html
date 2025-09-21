@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toko Maharani Nurbaiti - E-Commerce Lengkap</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); z-index: 40; backdrop-filter: blur(4px); }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; transition: all 0.3s ease-in-out; }
+        .modal.active, .modal-backdrop.active { display: block; }
+        body.modal-open { overflow: hidden; }
+        .btn-gradient { background-image: linear-gradient(to right, #a855f7, #ec4899); }
+        .bg-gradient-header { background-image: linear-gradient(to right, #9333ea, #db2777); }
+        .card-hover { transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
+        .card-hover:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <div id="app"></div>
+    <div id="modal-backdrop" class="modal-backdrop"></div>
+    <div id="modal-container" class="modal w-full max-w-lg">
+        <div id="modal-content" class="bg-white rounded-lg shadow-2xl overflow-hidden"></div>
+    </div>
+
+    <script>
+    // ===================================================================================
+    // SECTION 1: DATABASE SIMULATION & INITIAL DATA (MODEL)
+    // ===================================================================================
+    const db = {
+        users: [
+            { userId: 'admin01', fullName: 'Admin Maharani', email: 'admin@toko.com', password: 'adminpassword', role: 'admin' },
+            { userId: 'seller01', fullName: 'Nurbaiti Penjual', email: 'seller@toko.com', password: 'sellerpassword', role: 'seller' },
+            { userId: 'buyer01', fullName: 'Budi Pembeli', email: 'buyer@toko.com', password: 'buyerpassword', role: 'buyer' }
+        ],
+        products: [
+            { productId: 'SKU001', sellerId: 'seller01', productName: 'Gamis Modern "Aisha"', description: 'Gamis elegan bahan premium.', price: 350000, discountPrice: 315000, stock: 50, category: 'Pakaian Wanita', brand: 'Maharani Style', image: 'https://placehold.co/600x400/a855f7/ffffff?text=Gamis+Aisha' },
+            { productId: 'SKU002', sellerId: 'seller01', productName: 'Hijab Instan "Bergo"', description: 'Hijab praktis dan nyaman.', price: 75000, discountPrice: null, stock: 120, category: 'Aksesoris', brand: 'Maharani Style', image: 'https://placehold.co/600x400/ec4899/ffffff?text=Hijab+Bergo' },
+            { productId: 'SKU003', sellerId: 'seller01', productName: 'Baju Koko "Ikhwan"', description: 'Baju koko pria lengan panjang.', price: 180000, discountPrice: null, stock: 10, category: 'Pakaian Pria', brand: 'Maharani Man', image: 'https://placehold.co/600x400/8b5cf6/ffffff?text=Baju+Koko' }
+        ],
+        orders: [],
+        cart: {}
+    };
+
+    // ===================================================================================
+    // SECTION 2: APPLICATION STATE MANAGEMENT
+    // ===================================================================================
+    let currentUser = null; 
+    let currentView = 'login';
+
+    // ===================================================================================
+    // SECTION 3: "BACKEND" LOGIC (CONTROLLER)
+    // ===================================================================================
+    
+    // --- Authentication & Access Control ---
+    function login(email, password) { const user = db.users.find(u => u.email === email && u.password === password); if (user) { currentUser = user; if (user.role === 'buyer' && !db.cart[user.userId]) db.cart[user.userId] = []; return true; } return false; }
+    function logout() { currentUser = null; navigateTo('login'); }
+    function checkAccess(roles) { return currentUser && roles.includes(currentUser.role); }
+
+    // --- Product CRUD Functions ---
+    function addProduct(productData) { if (!checkAccess(['admin', 'seller'])) return { success: false, message: 'Akses ditolak.' }; const newProduct = { productId: `SKU${Date.now()}`, sellerId: currentUser.userId, ...productData, price: parseFloat(productData.price), discountPrice: productData.discountPrice ? parseFloat(productData.discountPrice) : null, stock: parseInt(productData.stock), image: productData.image || `https://placehold.co/600x400/e5e7eb/ffffff?text=Tidak+Ada+Gambar` }; db.products.unshift(newProduct); return { success: true, message: 'Produk berhasil ditambahkan.' }; }
+    function updateProduct(productId, updatedData) { if (!checkAccess(['admin', 'seller'])) return { success: false, message: 'Akses ditolak.' }; const productIndex = db.products.findIndex(p => p.productId === productId); if (productIndex === -1) return { success: false, message: 'Produk tidak ditemukan.' }; const product = db.products[productIndex]; if (currentUser.role === 'seller' && product.sellerId !== currentUser.userId) { return { success: false, message: 'Anda tidak memiliki izin untuk mengedit produk ini.' }; } updatedData.image = updatedData.image || product.image; db.products[productIndex] = { ...product, ...updatedData, price: parseFloat(updatedData.price), discountPrice: updatedData.discountPrice ? parseFloat(updatedData.discountPrice) : null, stock: parseInt(updatedData.stock) }; return { success: true, message: 'Produk berhasil diperbarui.' }; }
+    function deleteProduct(productId) { if (!checkAccess(['admin', 'seller'])) return { success: false, message: 'Akses ditolak.' }; const productIndex = db.products.findIndex(p => p.productId === productId); if (productIndex === -1) return { success: false, message: 'Produk tidak ditemukan.' }; const product = db.products[productIndex]; if (currentUser.role === 'seller' && product.sellerId !== currentUser.userId) { return { success: false, message: 'Anda tidak diizinkan menghapus produk ini.' }; } db.products.splice(productIndex, 1); return { success: true, message: 'Produk berhasil dihapus.' }; }
+
+    // --- Cart & Order Functions ---
+    function addToCart(productId, quantity = 1) { if (!checkAccess(['buyer'])) { showToast('Silakan login sebagai pembeli.', false); return; } const product = db.products.find(p => p.productId === productId); const cart = db.cart[currentUser.userId]; const existingItem = cart.find(item => item.productId === productId); const currentQtyInCart = existingItem ? existingItem.quantity : 0; if (!product || product.stock < currentQtyInCart + quantity) { showToast('Stok produk tidak mencukupi.', false); return; } if (existingItem) { existingItem.quantity += quantity; } else { cart.push({ productId, quantity }); } showToast(`${product.productName} ditambahkan ke keranjang.`); render(); }
+    function updateCartQuantity(productId, newQuantity) { if (!checkAccess(['buyer'])) return; const cart = db.cart[currentUser.userId]; const item = cart.find(i => i.productId === productId); const product = db.products.find(p => p.productId === productId); if (item) { if (newQuantity > 0 && product.stock >= newQuantity) { item.quantity = newQuantity; } else if (newQuantity > product.stock) { showToast(`Stok maksimal untuk ${product.productName} adalah ${product.stock}`, false); item.quantity = product.stock; } else { db.cart[currentUser.userId] = cart.filter(i => i.productId !== productId); } } render(); }
+    function getCartItemsWithDetails() { if (!checkAccess(['buyer'])) return []; const cart = db.cart[currentUser.userId] || []; return cart.map(item => { const product = db.products.find(p => p.productId === item.productId); return { ...product, quantity: item.quantity, finalPrice: product.discountPrice || product.price }; }).filter(item => item.productId); }
+    function createOrder(orderDetails) { if (!checkAccess(['buyer'])) return { success: false, message: 'Akses ditolak.' }; const cartItems = getCartItemsWithDetails(); if (cartItems.length === 0) return { success: false, message: 'Keranjang Anda kosong.' }; for (const item of cartItems) { const product = db.products.find(p => p.productId === item.productId); if (!product || product.stock < item.quantity) { return { success: false, message: `Stok untuk ${product.productName} tidak mencukupi. Pesanan dibatalkan.` }; } } cartItems.forEach(item => { const product = db.products.find(p => p.productId === item.productId); product.stock -= item.quantity; }); const subtotal = cartItems.reduce((sum, item) => sum + (item.finalPrice * item.quantity), 0); const shippingCost = 15000; const newOrder = { orderId: `ORD${Date.now()}`, customerId: currentUser.userId, orderDate: new Date().toISOString(), items: cartItems.map(item => ({ productId: item.productId, productName: item.productName, quantity: item.quantity, priceAtPurchase: item.finalPrice })), paymentMethod: orderDetails.paymentMethod, paymentStatus: 'Pending', shippingMethod: orderDetails.shippingMethod, trackingNumber: null, orderStatus: 'Proses', shippingCost: shippingCost, totalAmount: subtotal + shippingCost, buyerNote: orderDetails.buyerNote }; db.orders.unshift(newOrder); db.cart[currentUser.userId] = []; return { success: true, message: 'Pesanan berhasil dibuat.' }; }
+    function updateOrder(orderId, data) { if (!checkAccess(['admin', 'seller'])) return { success: false, message: 'Akses ditolak.' }; const order = db.orders.find(o => o.orderId === orderId); if (!order) return { success: false, message: 'Pesanan tidak ditemukan.' }; Object.assign(order, data); return { success: true, message: `Pesanan ${orderId} berhasil diperbarui.` }; }
+
+    // ===================================================================================
+    // SECTION 4: RENDER FUNCTIONS (VIEW)
+    // ===================================================================================
+
+    const app = document.getElementById('app');
+
+    function render() {
+        if (!currentUser) {
+            app.innerHTML = renderLoginForm();
+        } else {
+            app.innerHTML = `${renderNavbar()}<main id="main-content" class="container mx-auto p-4 sm:p-6 lg:p-8"></main><div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2"></div>`;
+            renderCurrentView();
+        }
+    }
+
+    function renderCurrentView() {
+        const main = document.getElementById('main-content');
+        if (!main) return;
+
+        const views = {
+            'login': renderLoginForm,
+            'home': renderHomePage,
+            'cart': renderCartPage,
+            'checkout': renderCheckoutPage,
+            'orders': renderOrderHistory,
+            'sellerDashboard': renderSellerDashboard,
+            'adminDashboard': renderSellerDashboard,
+            'orderManagement': renderOrderManagementPage,
+        };
+
+        const viewToRender = views[currentView] || views['home'];
+        main.innerHTML = viewToRender();
+        window.scrollTo(0, 0);
+    }
+
+    function renderLoginForm() { return `<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-100 to-pink-100 p-4"><div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 space-y-8"><div><h2 class="text-center text-3xl font-extrabold text-gray-900">Toko Maharani Nurbaiti</h2><p class="mt-2 text-center text-sm text-gray-600">Silakan masuk untuk melanjutkan</p></div><form id="login-form" class="mt-8 space-y-6"><input type="email" id="email" value="buyer@toko.com" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500" placeholder="Email"><input type="password" id="password" value="buyerpassword" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500" placeholder="Password"><button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white btn-gradient hover:opacity-90">Login</button></form><div class="text-xs text-center text-gray-500 bg-gray-100 p-3 rounded-lg"><p class="font-semibold">Akun Demo:</p><p><b>Admin:</b> admin@toko.com / adminpassword</p><p><b>Seller:</b> seller@toko.com / sellerpassword</p><p><b>Buyer:</b> buyer@toko.com / buyerpassword</p></div></div></div>`; }
+    
+    function renderNavbar() {
+        const cartCount = checkAccess(['buyer']) ? (db.cart[currentUser.userId] || []).reduce((sum, item) => sum + item.quantity, 0) : 0;
+        const navLinks = {
+            buyer: [
+                { view: 'home', label: 'Home' },
+                { view: 'cart', label: `Keranjang (${cartCount})` },
+                { view: 'orders', label: 'Pesanan Saya' }
+            ],
+            seller: [
+                { view: 'sellerDashboard', label: 'Produk Saya' },
+                { view: 'orderManagement', label: 'Kelola Pesanan' }
+            ],
+            admin: [
+                { view: 'adminDashboard', label: 'Semua Produk' },
+                { view: 'orderManagement', label: 'Semua Pesanan' }
+            ],
+        };
+        const links = (navLinks[currentUser.role] || []).map(link => `<a href="#" onclick="navigateTo('${link.view}')" class="${currentView === link.view ? 'bg-purple-100 text-purple-700' : 'text-gray-600 hover:bg-gray-100'} px-3 py-2 rounded-md text-sm font-medium flex items-center">${link.label}</a>`).join('');
+        return `<header class="bg-white shadow-sm sticky top-0 z-30"><div class="container mx-auto px-4 sm:px-6 lg:p-8"><div class="flex items-center justify-between h-16"><div class="flex items-center"><div class="flex-shrink-0 text-2xl font-extrabold bg-clip-text text-transparent btn-gradient">Toko Maharani Nurbaiti</div><nav class="hidden md:block ml-10 flex items-baseline space-x-4">${links}</nav></div><div class="flex items-center"><span class="text-gray-700 mr-4 text-sm hidden sm:block">Halo, <b>${currentUser.fullName}</b>!</span><button onclick="logout()" class="text-sm font-medium text-white py-2 px-4 rounded-lg btn-gradient hover:opacity-90">Logout</button></div></div></div></header>`;
+    }
+
+    function renderProductCard(product) { const price = product.discountPrice ? `<p><span class="text-2xl font-bold text-pink-600">Rp ${product.discountPrice.toLocaleString('id-ID')}</span><br><span class="text-gray-500 line-through">Rp ${product.price.toLocaleString('id-ID')}</span></p>` : `<p class="text-2xl font-bold text-gray-900">Rp ${product.price.toLocaleString('id-ID')}</p>`; const stockInfo = product.stock === 0 ? `<div class="px-2 py-1 text-xs font-semibold text-red-800 bg-red-100 rounded-full">Stok Habis</div>` : `<div class="px-2 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">Stok: ${product.stock}</div>`; const addToCartButton = checkAccess(['buyer']) && product.stock > 0 ? `<button onclick="addToCart('${product.productId}')" class="mt-4 w-full text-white font-semibold py-2 rounded-lg btn-gradient hover:opacity-90">Tambah ke Keranjang</button>` : ''; return `<div class="bg-white rounded-lg shadow-md overflow-hidden flex flex-col card-hover"><img src="${product.image}" onerror="this.src='https://placehold.co/600x400/e5e7eb/ffffff?text=Gambar+Rusak'" alt="${product.productName}" class="w-full h-48 object-cover"><div class="p-4 flex flex-col flex-grow"><div class="flex-grow"><span class="text-xs font-semibold text-purple-600">${product.category}</span><h3 class="font-bold text-lg mt-1">${product.productName}</h3><p class="text-sm text-gray-600">${product.brand}</p><div class="mt-2">${price}</div></div><div class="flex justify-between items-center mt-4">${stockInfo}</div>${addToCartButton}</div></div>`; }
+    function renderHomePage() { return `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">${db.products.map(p => renderProductCard(p)).join('')}</div>`; }
+    function renderSellerDashboard() { if (!checkAccess(['seller', 'admin'])) return `<h1>Akses Ditolak</h1>`; const productsToShow = currentUser.role === 'admin' ? db.products : db.products.filter(p => p.sellerId === currentUser.userId); const productsHtml = productsToShow.map(p => `<div class="bg-white rounded-lg shadow-md flex flex-col card-hover overflow-hidden"><img src="${p.image}" onerror="this.src='https://placehold.co/600x400/e5e7eb/ffffff?text=Gambar+Rusak'" alt="${p.productName}" class="w-full h-40 object-cover"><div class="p-4 flex-grow flex flex-col"><div class="flex-grow"><p class="font-bold text-lg">${p.productName}</p><p class="text-sm text-gray-500">${p.productId}</p><p class="text-purple-700 font-semibold mt-1">Rp ${(p.discountPrice || p.price).toLocaleString('id-ID')}</p><p class="text-sm">Stok: ${p.stock}</p></div><div class="flex gap-2 mt-4"><button onclick="showProductForm('${p.productId}')" class="w-full bg-blue-500 text-white py-2 px-3 rounded-lg text-sm font-semibold hover:bg-blue-600">Edit</button><button onclick="handleDeleteProduct('${p.productId}')" class="w-full bg-red-500 text-white py-2 px-3 rounded-lg text-sm font-semibold hover:bg-red-600">Hapus</button></div></div></div>`).join(''); return `<div class="flex justify-between items-center mb-6"><h1 class="text-3xl font-bold">${currentUser.role === 'admin' ? 'Semua Produk' : 'Produk Saya'}</h1><button onclick="showProductForm()" class="text-white font-semibold py-2 px-5 rounded-lg btn-gradient hover:opacity-90 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg><span>Tambah Produk</span></button></div><div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">${productsToShow.length > 0 ? productsHtml : `<p class="col-span-full text-center text-gray-500 py-10">Belum ada produk.</p>`}</div>`; }
+    function renderProductForm(productId = null) { const product = productId ? db.products.find(p => p.productId === productId) : {}; const title = productId ? 'Edit Produk' : 'Tambah Produk Baru'; return `<div class="bg-gradient-header text-white p-4"><h2 class="text-xl font-bold">${title}</h2></div><form id="product-form" data-product-id="${productId || ''}" class="p-6 space-y-4 max-h-[70vh] overflow-y-auto"><div><label class="block text-sm font-medium mb-1">Gambar Produk</label><img id="image-preview" src="${product.image || 'https://placehold.co/600x400/e5e7eb/ffffff?text=Pratinjau'}" alt="Pratinjau Gambar" class="mb-2 rounded-lg object-cover h-32 w-full bg-gray-100"><input type="file" id="image-upload" onchange="handleImagePreview(event)" accept="image/*" class="hidden"><label for="image-upload" class="cursor-pointer text-center w-full inline-block bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg">Pilih Gambar</label><input type="hidden" name="image" id="image-data" value="${product.image || ''}"></div><input type="text" name="productName" value="${product.productName || ''}" required placeholder="Nama Produk" class="w-full p-2 border rounded-md"><textarea name="description" rows="3" placeholder="Deskripsi" class="w-full p-2 border rounded-md">${product.description || ''}</textarea><div class="grid grid-cols-2 gap-4"><input type="number" name="price" value="${product.price || ''}" required placeholder="Harga" class="w-full p-2 border rounded-md"><input type="number" name="discountPrice" value="${product.discountPrice || ''}" placeholder="Harga Diskon (opsional)" class="w-full p-2 border rounded-md"><input type="number" name="stock" value="${product.stock || 0}" required placeholder="Stok" class="w-full p-2 border rounded-md"><select name="status" class="w-full p-2 border rounded-md"><option value="Tersedia" ${product.status === 'Tersedia' ? 'selected' : ''}>Tersedia</option><option value="Habis" ${product.status === 'Habis' ? 'selected' : ''}>Habis</option></select><input type="text" name="category" value="${product.category || ''}" placeholder="Kategori" class="w-full p-2 border rounded-md"><input type="text" name="brand" value="${product.brand || ''}" placeholder="Merek" class="w-full p-2 border rounded-md"></div><div class="flex justify-end gap-2 pt-4 sticky bottom-0 bg-white py-3 -mx-6 px-6 border-t"><button type="button" onclick="closeModal()" class="bg-gray-200 py-2 px-4 rounded-lg hover:bg-gray-300">Batal</button><button type="submit" class="text-white font-semibold py-2 px-4 rounded-lg btn-gradient hover:opacity-90">${productId ? 'Simpan' : 'Tambah'}</button></div></form>`; }
+    function renderDeleteConfirmation(productId) { const product = db.products.find(p => p.productId === productId); return `<div class="p-6 text-center"><svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-12 w-12 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><h3 class="text-lg font-bold mt-2">Hapus Produk?</h3><p class="text-sm text-gray-500 mt-2">Anda akan menghapus <strong>${product.productName}</strong>. Aksi ini tidak dapat dibatalkan.</p><div class="flex justify-center gap-4 mt-6"><button onclick="closeModal()" class="py-2 px-6 bg-gray-200 rounded-lg hover:bg-gray-300">Batal</button><button onclick="confirmDeleteProduct('${productId}')" class="py-2 px-6 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700">Ya, Hapus</button></div></div>`; }
+    function renderCartPage() { const cartItems = getCartItemsWithDetails(); let subtotal = 0; const itemsHtml = cartItems.map(item => { const itemTotal = item.finalPrice * item.quantity; subtotal += itemTotal; return `<div class="flex items-center justify-between py-4"><div class="flex items-center gap-4 flex-grow"><img src="${item.image}" class="w-20 h-20 object-cover rounded-md"><div class="w-full sm:w-auto"><p class="font-bold">${item.productName}</p><p class="text-sm text-gray-600">Rp ${item.finalPrice.toLocaleString('id-ID')}</p></div></div><div class="flex items-center gap-2 ml-4"><button onclick="updateCartQuantity('${item.productId}', ${item.quantity - 1})" class="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300">-</button><span class="w-10 text-center">${item.quantity}</span><button onclick="updateCartQuantity('${item.productId}', ${item.quantity + 1})" class="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300">+</button></div><div class="text-right ml-4 w-32"><p class="font-semibold">Rp ${itemTotal.toLocaleString('id-ID')}</p></div></div>`; }).join(''); return `<div class="bg-white p-6 rounded-lg shadow-lg"><h1 class="text-3xl font-bold mb-6">Keranjang Belanja</h1>${cartItems.length > 0 ? `<div class="divide-y">${itemsHtml}</div><div class="mt-6 flex flex-col sm:flex-row justify-between items-center gap-4"><div class="text-xl">Subtotal: <span class="font-bold">Rp ${subtotal.toLocaleString('id-ID')}</span></div><button onclick="navigateTo('checkout')" class="w-full sm:w-auto text-white font-semibold py-3 px-8 rounded-lg btn-gradient hover:opacity-90">Lanjut ke Checkout</button></div>` : `<div class="text-center py-10"><h3 class="text-xl font-semibold">Keranjang Anda Kosong</h3><p class="text-gray-500 mt-2">Mari kita isi dengan barang-barang menarik!</p><button onclick="navigateTo('home')" class="mt-4 text-white font-semibold py-2 px-6 rounded-lg btn-gradient hover:opacity-90">Mulai Belanja</button></div>`}</div>`; }
+    function renderCheckoutPage() { const cartItems = getCartItemsWithDetails(); if (cartItems.length === 0) { navigateTo('cart'); return ''; } const subtotal = cartItems.reduce((sum, item) => sum + (item.finalPrice * item.quantity), 0); const shipping = 15000; const total = subtotal + shipping; return `<div class="bg-white p-6 rounded-lg shadow-lg"><h1 class="text-3xl font-bold mb-6">Checkout</h1><form id="checkout-form" class="space-y-6"><div><h3 class="font-semibold mb-2">Ringkasan Pesanan</h3><div class="bg-gray-50 p-4 rounded-lg space-y-2">${cartItems.map(i => `<div class="flex justify-between text-sm"><span>${i.productName} (x${i.quantity})</span><span>Rp ${(i.finalPrice * i.quantity).toLocaleString('id-ID')}</span></div>`).join('')}<div class="flex justify-between border-t pt-2 mt-2"><span>Subtotal</span><span>Rp ${subtotal.toLocaleString('id-ID')}</span></div><div class="flex justify-between"><span>Ongkos Kirim</span><span>Rp ${shipping.toLocaleString('id-ID')}</span></div><div class="flex justify-between font-bold text-lg border-t pt-2 mt-2"><span>Total</span><span>Rp ${total.toLocaleString('id-ID')}</span></div></div></div><div><label class="block font-semibold">Metode Pengiriman</label><select name="shippingMethod" class="w-full mt-1 p-2 border rounded-md"><option>JNE REG</option><option>Sicepat</option><option>GoSend Instant</option></select></div><div><label class="block font-semibold">Metode Pembayaran</label><select name="paymentMethod" class="w-full mt-1 p-2 border rounded-md"><option>Transfer Bank BCA</option><option>GoPay</option><option>OVO</option><option>COD (Bayar di Tempat)</option></select></div><div><label class="block font-semibold">Catatan untuk Penjual (Opsional)</label><textarea name="buyerNote" rows="3" class="w-full mt-1 p-2 border rounded-md"></textarea></div><button type="submit" class="w-full text-white font-bold py-3 px-4 rounded-lg btn-gradient hover:opacity-90">Buat Pesanan</button></form></div>`; }
+    function renderOrderHistory() { const orders = db.orders.filter(o => o.customerId === currentUser.userId); return `<h1 class="text-3xl font-bold mb-6">Riwayat Pesanan Saya</h1><div class="space-y-4">${orders.length > 0 ? orders.map(order => renderOrderCard(order, false)).join('') : `<div class="bg-white p-6 rounded-lg text-center text-gray-500">Anda belum memiliki riwayat pesanan.</div>`}</div>`; }
+    function renderOrderManagementPage() { if (!checkAccess(['admin', 'seller'])) return `<h1>Akses Ditolak</h1>`; const orders = currentUser.role === 'admin' ? db.orders : db.orders.filter(order => order.items.some(item => { const product = db.products.find(p => p.productId === item.productId); return product && product.sellerId === currentUser.userId; })); return `<h1 class="text-3xl font-bold mb-6">Kelola Pesanan</h1><div class="space-y-4">${orders.length > 0 ? orders.map(order => renderOrderCard(order, true)).join('') : `<div class="bg-white p-6 rounded-lg text-center text-gray-500">Tidak ada pesanan untuk dikelola.</div>`}</div>`; }
+    function renderOrderCard(order, isManagement = false) { const statusColors = { 'Proses': 'bg-yellow-100 text-yellow-800', 'Dikirim': 'bg-blue-100 text-blue-800', 'Selesai': 'bg-green-100 text-green-800', 'Batal': 'bg-red-100 text-red-800' }; const paymentColors = { 'Pending': 'bg-yellow-100 text-yellow-800', 'Paid': 'bg-green-100 text-green-800', 'Gagal': 'bg-red-100 text-red-800' }; const managementButton = isManagement ? `<button onclick="showOrderUpdateForm('${order.orderId}')" class="text-sm font-semibold text-white bg-purple-600 py-1 px-3 rounded-lg hover:bg-purple-700">Kelola</button>` : ''; return `<div class="bg-white p-4 rounded-lg shadow-md"><div class="flex flex-wrap justify-between items-center border-b pb-2 mb-2 gap-2"><div><p class="font-bold text-purple-700">#${order.orderId}</p><p class="text-xs text-gray-500">${new Date(order.orderDate).toLocaleString('id-ID')}</p></div><div class="flex items-center gap-2">${managementButton}<span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColors[order.orderStatus] || ''}">${order.orderStatus}</span><span class="px-2 py-1 text-xs font-semibold rounded-full ${paymentColors[order.paymentStatus] || ''}">${order.paymentStatus}</span></div></div><div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm"><div class="md:col-span-2"><strong>Produk:</strong> ${order.items.map(i => `${i.productName} (x${i.quantity})`).join(', ')}</div><div><strong>Total:</strong> <span class="font-bold">Rp ${order.totalAmount.toLocaleString('id-ID')}</span></div>${order.trackingNumber ? `<div class="md:col-span-3"><strong>No. Resi:</strong> <span class="font-mono text-blue-600">${order.trackingNumber}</span></div>` : ''}</div></div>`; }
+    function renderOrderUpdateForm(orderId) { const order = db.orders.find(o => o.orderId === orderId); return `<div class="bg-gradient-header text-white p-4"><h2 class="text-xl font-bold">Kelola Pesanan #${order.orderId}</h2></div><form id="order-update-form" data-order-id="${order.orderId}" class="p-6 space-y-4"><div><label class="block text-sm font-medium">Status Pesanan</label><select name="orderStatus" class="w-full mt-1 p-2 border rounded-md"><option ${order.orderStatus === 'Proses' ? 'selected' : ''}>Proses</option><option ${order.orderStatus === 'Dikirim' ? 'selected' : ''}>Dikirim</option><option ${order.orderStatus === 'Selesai' ? 'selected' : ''}>Selesai</option><option ${order.orderStatus === 'Batal' ? 'selected' : ''}>Batal</option></select></div><div><label class="block text-sm font-medium">Status Pembayaran</label><select name="paymentStatus" class="w-full mt-1 p-2 border rounded-md"><option ${order.paymentStatus === 'Pending' ? 'selected' : ''}>Pending</option><option ${order.paymentStatus === 'Paid' ? 'selected' : ''}>Paid</option><option ${order.paymentStatus === 'Gagal' ? 'selected' : ''}>Gagal</option></select></div><div><label class="block text-sm font-medium">Nomor Resi</label><input type="text" name="trackingNumber" value="${order.trackingNumber || ''}" class="w-full mt-1 p-2 border rounded-md"></div><div class="flex justify-end gap-2 pt-4"><button type="button" onclick="closeModal()" class="bg-gray-200 py-2 px-4 rounded-lg hover:bg-gray-300">Batal</button><button type="submit" class="text-white font-semibold py-2 px-4 rounded-lg btn-gradient hover:opacity-90">Simpan</button></div></form>`; }
+
+    // ===================================================================================
+    // SECTION 5: NAVIGATION & EVENT HANDLERS
+    // ===================================================================================
+    
+    function navigateTo(view) {
+        currentView = view;
+        render();
+    }
+
+    document.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const handlers = {
+            'login-form': () => {
+                if (login(e.target.email.value, e.target.password.value)) {
+                    let startView = 'home';
+                    if (currentUser.role === 'seller') startView = 'sellerDashboard';
+                    if (currentUser.role === 'admin') startView = 'adminDashboard';
+                    navigateTo(startView);
+                } else {
+                    showToast('Email atau password salah!', false);
+                }
+            },
+            'product-form': () => {
+                const data = Object.fromEntries(new FormData(e.target));
+                const productId = e.target.dataset.productId;
+                const result = productId ? updateProduct(productId, data) : addProduct(data);
+                showToast(result.message, result.success);
+                if (result.success) {
+                    closeModal();
+                    navigateTo(currentUser.role === 'admin' ? 'adminDashboard' : 'sellerDashboard');
+                }
+            },
+            'checkout-form': () => {
+                const data = Object.fromEntries(new FormData(e.target));
+                const result = createOrder(data);
+                showToast(result.message, result.success);
+                if (result.success) {
+                    navigateTo('orders');
+                } else {
+                    render();
+                }
+            },
+            'order-update-form': () => {
+                const data = Object.fromEntries(new FormData(e.target));
+                const orderId = e.target.dataset.orderId;
+                const result = updateOrder(orderId, data);
+                showToast(result.message, result.success);
+                if (result.success) {
+                    closeModal();
+                    navigateTo('orderManagement');
+                }
+            }
+        };
+        if (handlers[e.target.id]) handlers[e.target.id]();
+    });
+
+    function handleDeleteProduct(productId) { openModal(renderDeleteConfirmation(productId)); }
+    function confirmDeleteProduct(productId) {
+        const result = deleteProduct(productId);
+        showToast(result.message, result.success);
+        closeModal();
+        if (result.success) {
+            navigateTo(currentUser.role === 'admin' ? 'adminDashboard' : 'sellerDashboard');
+        }
+    }
+    
+    // ===================================================================================
+    // SECTION 6: UTILITY FUNCTIONS (Modals, Toasts, File Handling)
+    // ===================================================================================
+    const modalContainer = document.getElementById('modal-container'); const modalBackdrop = document.getElementById('modal-backdrop'); const modalContent = document.getElementById('modal-content');
+    function openModal(content) { modalContent.innerHTML = content; modalContainer.classList.add('active'); modalBackdrop.classList.add('active'); document.body.classList.add('modal-open'); }
+    function closeModal() { modalContainer.classList.remove('active'); modalBackdrop.classList.remove('active'); modalContent.innerHTML = ''; document.body.classList.remove('modal-open'); }
+    function showToast(message, isSuccess = true) { const toastContainer = document.getElementById('toast-container'); if (!toastContainer) return; const toast = document.createElement('div'); const bgColor = isSuccess ? 'bg-green-600' : 'bg-red-600'; toast.className = `p-4 rounded-lg text-white ${bgColor} shadow-lg animate-bounce`; toast.textContent = message; toastContainer.appendChild(toast); setTimeout(() => { toast.remove(); }, 3000); }
+    function showProductForm(productId = null) { openModal(renderProductForm(productId)); }
+    function showOrderUpdateForm(orderId) { openModal(renderOrderUpdateForm(orderId)); }
+    function handleImagePreview(event) { const file = event.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = function(e) { document.getElementById('image-preview').src = e.target.result; document.getElementById('image-data').value = e.target.result; }; reader.readAsDataURL(file); } }
+
+    // ===================================================================================
+    // SECTION 7: APPLICATION INITIALIZATION
+    // ===================================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+        modalBackdrop.addEventListener('click', closeModal);
+        render();
+    });
+    </script>
+</body>
+</html>
+
